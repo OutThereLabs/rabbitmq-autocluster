@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: rabbitmq-persistent
+metadata:
+  annotations:
+    description: RabbitMQ Message Broker
+    iconClass: icon-rabbitmq
+    tags: rabbitmq,messaging
+  name: rabbitmq-persistent
+objects:
+- apiVersion: apps/v1beta1
+  kind: StatefulSet
+  metadata:
+    name: ${APP_NAME}
+  spec:
+    volumeClaimTemplates:
+    - metadata:
+        annotations:
+          volume.beta.kubernetes.io/storage-class: default
+        name: ${APP_NAME}-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: ${PVC_STORAGE}
+    serviceName: ${APP_NAME}
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          app: ${APP_NAME}
+          deploymentconfig: ${APP_NAME}
+      spec:
+        containers:
+        - name: rabbitmq-autocluster
+          image: ${RABBITMQ_IMAGE}:${RABBITMQ_VERSION}
+          ports:
+            - name: http
+              protocol: TCP
+              containerPort: 15672
+            - name: amqp
+              protocol: TCP
+              containerPort: 5672
+          args: ["cp /var/lib/rabbitmq/.cluster/cookie /var/lib/rabbitmq/.erlang.cookie; chmod 600 /var/lib/rabbitmq/.erlang.cookie; rabbitmq-server"]
+          command: ["/bin/sh","-c"]
+          livenessProbe:
+            exec:
+              command: ["rabbitmqctl", "status"]
+          readinessProbe:
+            exec:
+              command: ["rabbitmqctl", "status"]
+          resources:
+            requests:
+              cpu: 1m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          imagePullPolicy: Always
+          volumeMounts:
+          - mountPath: /var/lib/rabbitmq
+            name: ${APP_NAME}-data
+          - mountPath: /var/lib/rabbitmq/.cluster
+            name: erlang-cluster-cookie
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RABBITMQ_USE_LONGNAME
+              value: "true"
+            - name: RABBITMQ_NODENAME
+              value: "rabbit@$(POD_NAME).${APP_NAME}.$(NAMESPACE).svc.cluster.local"
+            - name: AUTOCLUSTER_HOST
+              value: "${APP_NAME}.$(NAMESPACE).svc.cluster.local"
+            - name: AUTOCLUSTER_TYPE
+              value: "dns"
+            - name: AUTOCLUSTER_DELAY
+              value: "30"
+            - name: AUTOCLUSTER_CLEANUP
+              value: "true"
+            - name: CLEANUP_WARN_ONLY
+              value: "false"
+        - image: kbudde/rabbitmq-exporter
+          name: prometheus-exporter
+          ports:
+          - containerPort: 9090
+            name: prometheus
+        volumes:
+        - name: erlang-cluster-cookie
+          secret:
+            defaultMode: 400
+            secretName: ${APP_NAME}-cluster-cookie
+        - name: hawkular-openshift-agent
+          configMap:
+            defaultMode: 420
+            name: ${APP_NAME}-hawkular-openshift-agent
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ${APP_NAME}-cluster-cookie
+  stringData:
+    cookie: "${ERLANG_CLUSTER_COOKIE}="
+- apiVersion: v1
+  data:
+    hawkular-openshift-agent: |-
+      endpoints:
+      - type: prometheus
+        protocol: http
+        port: 9090
+        path: /metrics
+        collection_interval: 30s
+        tags:
+          container_name: rabbitmq
+          app_name: ${APP_NAME}
+  kind: ConfigMap
+  metadata:
+    labels:
+      app: ${APP_NAME}
+      template: rabbitmq-persistent
+    name: ${APP_NAME}-hawkular-openshift-agent
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: ${APP_NAME}
+  spec:
+    clusterIP: None
+    ports:
+    - name: service
+      port: 5672
+      protocol: TCP
+      targetPort: 5672
+    selector:
+      app: ${APP_NAME}
+      deploymentconfig: ${APP_NAME}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: "${APP_NAME}-clients"
+  spec:
+    ports:
+    - name: service
+      port: 5672
+      protocol: TCP
+      targetPort: 5672
+    selector:
+      app: ${APP_NAME}
+      deploymentconfig: ${APP_NAME}
+parameters:
+- name: APP_NAME
+  value: rabbitmq
+  required: true
+- name: RABBITMQ_VERSION
+  value: 3.6.11
+  required: true
+- name: RABBITMQ_IMAGE
+  value: pivotalrabbitmq/rabbitmq-autocluster
+  required: true
+- name: PVC_STORAGE
+  value: 16G
+  required: true
+- name: ERLANG_CLUSTER_COOKIE
+  from: '[a-zA-Z0-9]{43}'
+  generate: expression
+  required: true
