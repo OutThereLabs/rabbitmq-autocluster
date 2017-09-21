@@ -157,10 +157,10 @@ parameters:
   value: rabbitmq
   required: true
 - name: RABBITMQ_VERSION
-  value: 3.6.11
+  value: '3.6'
   required: true
 - name: RABBITMQ_IMAGE
-  value: pivotalrabbitmq/rabbitmq-autocluster
+  value: outtherelabs/rabbitmq-autocluster
   required: true
 - name: PVC_STORAGE
   value: 16G
