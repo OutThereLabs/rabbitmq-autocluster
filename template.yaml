@@ -43,6 +43,9 @@ objects:
             - name: amqp
               protocol: TCP
               containerPort: 5672
+            - name: clustering
+              protocol: TCP
+              containerPort: 25672
           args: ["cp /var/lib/rabbitmq/.cluster/cookie /var/lib/rabbitmq/.erlang.cookie; chmod 600 /var/lib/rabbitmq/.erlang.cookie; rabbitmq-server"]
           command: ["/bin/sh","-c"]
           livenessProbe:
@@ -51,6 +54,10 @@ objects:
           readinessProbe:
             exec:
               command: ["rabbitmqctl", "status"]
+          lifecycle:
+            preStop:
+              exec:
+                command: ["rabbitmqctl", "stop"]
           resources:
             requests:
               cpu: 1m
@@ -84,9 +91,9 @@ objects:
             - name: AUTOCLUSTER_DELAY
               value: "30"
             - name: AUTOCLUSTER_CLEANUP
-              value: "true"
-            - name: CLEANUP_WARN_ONLY
               value: "false"
+            - name: CLEANUP_WARN_ONLY
+              value: "true"
         - image: kbudde/rabbitmq-exporter
           name: prometheus-exporter
           ports:
@@ -132,10 +139,10 @@ objects:
   spec:
     clusterIP: None
     ports:
-    - name: service
-      port: 5672
+    - name: clustering
+      port: 25672
       protocol: TCP
-      targetPort: 5672
+      targetPort: 25672
     selector:
       app: ${APP_NAME}
       deploymentconfig: ${APP_NAME}
