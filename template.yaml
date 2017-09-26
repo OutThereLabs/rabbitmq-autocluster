@@ -46,11 +46,17 @@ objects:
             - name: clustering
               protocol: TCP
               containerPort: 25672
-          args: ["cp /var/lib/rabbitmq/.cluster/cookie /var/lib/rabbitmq/.erlang.cookie; chmod 600 /var/lib/rabbitmq/.erlang.cookie; rabbitmq-server"]
+          args:
+          - >-
+            cp /var/lib/rabbitmq/.cluster/cookie /var/lib/rabbitmq/.erlang.cookie;
+            chmod 600 /var/lib/rabbitmq/.erlang.cookie;
+            docker-entrypoint.sh rabbitmq-server
           command: ["/bin/sh","-c"]
           livenessProbe:
-            exec:
-              command: ["rabbitmqctl", "status"]
+            tcpSocket:
+              port: 5672
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
           readinessProbe:
             exec:
               command: ["rabbitmqctl", "status"]
@@ -94,6 +100,8 @@ objects:
               value: "false"
             - name: CLEANUP_WARN_ONLY
               value: "true"
+            - name: RABBITMQ_LOGS
+              value: "-"
         - image: kbudde/rabbitmq-exporter
           name: prometheus-exporter
           ports:
@@ -164,10 +172,10 @@ parameters:
   value: rabbitmq
   required: true
 - name: RABBITMQ_VERSION
-  value: '3.6'
+  value: '3.7'
   required: true
 - name: RABBITMQ_IMAGE
-  value: outtherelabs/rabbitmq-autocluster
+  value: rabbitmq
   required: true
 - name: PVC_STORAGE
   value: 16G
